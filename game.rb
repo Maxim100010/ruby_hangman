@@ -1,13 +1,16 @@
 # frozen_string_literal: true
 
+require 'json'
+
 class Game
   attr_accessor :list_of_words, :chosen_word, :chosen_word_hidden, :used_letters
 
-  def initialize
-    @list_of_words = populate_list_of_words
-    @chosen_word = list_of_words.sample.split('')
-    @chosen_word_hidden = Array.new(chosen_word.length, ' _ ')
-    @used_letters = []
+  def initialize(list_of_words = populate_list_of_words, chosen_word = list_of_words.sample.split(''),
+                 chosen_word_hidden = Array.new(chosen_word.length, ' _ '), used_letters = [])
+    @list_of_words = list_of_words
+    @chosen_word = chosen_word
+    @chosen_word_hidden = chosen_word_hidden
+    @used_letters = used_letters
   end
 
   def populate_list_of_words
@@ -35,36 +38,73 @@ class Game
     end
   end
 
-  def play_game
+  def play_game(rounds_left = 10)
     puts 'Welcome to hangman! You have 10 guesses to guess a word'
-    number_of_tries = 10
-    while number_of_tries != 0
-      puts "Guesses remaining: #{number_of_tries}"
+    puts "Used letters: #{used_letters.join(' ')}" if rounds_left < 10
+    while rounds_left != 0
+      puts "Guesses remaining: #{rounds_left}"
       puts "#{chosen_word_hidden.join}\n\n"
-      puts 'Guess a letter (A-Z)'
+      puts 'Guess a letter (A-Z) or type SAVE to save and quit'
       guess = ''
-      guess = gets.chomp until guess.length == 1 && /^[a-z]$/i.match?(guess)
+      guess = gets.chomp until (guess.length == 1 && /^[a-z]$/i.match?(guess)) || guess.downcase == 'save'
       puts "\n\n"
-      number_of_tries -= 1 if guess_letter(guess.upcase).zero?
+      save_game(rounds_left) if guess == 'save'
+      rounds_left -= 1 if guess_letter(guess.upcase).zero?
       puts "Used letters: #{used_letters.join(' ')}"
       if chosen_word.join == chosen_word_hidden.join.gsub(/\s+/, '')
         puts "\nYou win!!! The word was: #{chosen_word.join}"
+        File.open('save_data.json', 'w') {|file| file.truncate(0) }
         return
       end
     end
     puts "\nYou lose :( The word was: #{chosen_word.join}"
+    File.open('save_data.json', 'w') {|file| file.truncate(0) }
+  end
+
+  def save_game(rounds_left)
+    save_file = {
+      'list_of_words' => list_of_words,
+      'chosen_word' => chosen_word,
+      'chosen_word_hidden' => chosen_word_hidden,
+      'used_letters' => used_letters,
+      'rounds_left' => rounds_left
+    }
+    File.open('save_data.json', 'w') do |file|
+      file.write(JSON.pretty_generate(save_file))
+    end
+    exit
   end
 end
 
 class Main
-
-  def initialize
-  end
-
   def self.start_game
-    Game.new.play_game
+    puts 'Press N to start new game, Press L to load existing save'
+    while (choice = gets.chomp.downcase)
+      case choice
+      when 'n'
+        File.open('save_data.json', 'w') {|file| file.truncate(0) }
+        Game.new.play_game
+        break
+      when 'l'
+        begin
+          file_content = File.read('save_data.json')
+          recreated_object = JSON.parse(file_content)
+
+          puts 'Previous game successfully loaded'
+          loaded_game = Game.new(recreated_object['list_of_words'],
+                                 recreated_object['chosen_word'], recreated_object['chosen_word_hidden'], recreated_object['used_letters'])
+          loaded_game.play_game(recreated_object['rounds_left'])
+        rescue Errno::ENOENT
+          puts 'File not found at save_data.json. Make sure the file exists.'
+        rescue JSON::ParserError
+          puts 'There is currently no save game'
+        end
+        break
+      else
+        puts 'Please select either N or L'
+      end
+    end
   end
 end
-
 
 Main.start_game
